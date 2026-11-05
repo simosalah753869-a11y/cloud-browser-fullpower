@@ -1,15 +1,18 @@
-name: Full-Power Cloud Browser (4-Core 16GB RAM)
+name: Zero-Lag KasmVNC Cloud Browser (4-Core 16GB RAM)
 on:
   workflow_dispatch:
 
 jobs:
-  cloud-browser:
+  fast-browser:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
-      - name: Start Full-Power Chromium (KasmVNC 60FPS + Audio + Arabic)
+      - name: Launch Pure KasmVNC (Zero Selkies Lag + 720p Turbo)
         run: |
           mkdir -p $HOME/cloud_browser_profile
+          docker rm -f cloud_chrome >/dev/null 2>&1 || true
+
+          # Use pure KasmVNC version (be46f21a-ls105) instead of laggy Selkies (:latest)
           docker run -d \
             --name=cloud_chrome \
             --security-opt seccomp=unconfined \
@@ -17,8 +20,10 @@ jobs:
             -e PGID=1000 \
             -e TZ=Asia/Riyadh \
             -e SUBFOLDER=/ \
-            -e TITLE="Cloud Browser 60FPS" \
-            -e CHROME_CLI="https://www.youtube.com https://www.facebook.com" \
+            -e TITLE="Turbo Cloud Browser" \
+            -e CUSTOM_RES_W=1280 \
+            -e CUSTOM_RES_H=720 \
+            -e CHROME_CLI="--disable-gpu-vsync --disable-smooth-scrolling --disk-cache-size=536870912 https://www.youtube.com https://www.facebook.com" \
             -e DOCKER_MODS="linuxserver/mods:universal-package-install" \
             -e INSTALL_PACKAGES="fonts-noto-core|fonts-noto-color-emoji|fonts-hosny-amiri" \
             -p 3000:3000 \
@@ -26,39 +31,31 @@ jobs:
             -v "$HOME/cloud_browser_profile:/config" \
             --shm-size="4gb" \
             --restart unless-stopped \
-            lscr.io/linuxserver/chromium:latest
+            lscr.io/linuxserver/chromium:be46f21a-ls105
 
           curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared
           chmod +x /tmp/cloudflared
-          nohup /tmp/cloudflared tunnel --no-autoupdate --url http://localhost:3000 > /tmp/cf.log 2>&1 &
+          # Use HTTP2 protocol and edge-ip-version 4 for much lower latency
+          nohup /tmp/cloudflared tunnel --no-autoupdate --protocol http2 --edge-ip-version 4 --url http://localhost:3000 > /tmp/cf.log 2>&1 &
 
           for i in {1..30}; do
             URL=$(grep -oE "https://[a-zA-Z0-9-]+\.trycloudflare\.com" /tmp/cf.log | head -n 1 || true)
             if [ -n "$URL" ]; then
-              echo "LIVE_BROWSER_URL=$URL"
               echo "$URL" > /tmp/live_url.txt
               break
             fi
             sleep 2
           done
 
-      - name: Publish Live Browser URL to Repo
+      - name: Publish Fast KasmVNC URL
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           URL=$(cat /tmp/live_url.txt || echo "PENDING")
-          echo "=========================================="
-          echo "LIVE CLOUD BROWSER URL: $URL"
-          echo "=========================================="
           B64=$(echo -n "$URL" | base64 -w 0)
-          SHA=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/contents/LIVE_URL.txt" | jq -r '.sha // empty')
-          if [ -n "$SHA" ]; then
-            curl -s -X PUT -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/contents/LIVE_URL.txt" -d "{\"message\":\"Update live URL\",\"content\":\"$B64\",\"sha\":\"$SHA\"}" >/dev/null
-          else
-            curl -s -X PUT -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/contents/LIVE_URL.txt" -d "{\"message\":\"Update live URL\",\"content\":\"$B64\"}" >/dev/null
-          fi
+          curl -s -X PUT -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/contents/LIVE_URL.txt" -d "{\"message\":\"Update fast KasmVNC URL\",\"content\":\"$B64\"}" >/dev/null
 
-      - name: Keep Cloud Browser Alive (6 Hours Full Power)
+      - name: Keep Alive
         run: |
           for m in {1..350}; do
             sleep 60
