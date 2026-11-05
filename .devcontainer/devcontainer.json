@@ -1,0 +1,27 @@
+{
+  "name": "Full-Power Cloud Browser (KasmVNC 60FPS + Audio + Arabic)",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "16gb",
+    "storage": "32gb"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "moby": true
+    }
+  },
+  "forwardPorts": [3000, 3001],
+  "portsAttributes": {
+    "3000": {
+      "label": "Cloud Browser (HTTP 60FPS + Audio)",
+      "onAutoForward": "openBrowser"
+    },
+    "3001": {
+      "label": "Cloud Browser (HTTPS)",
+      "onAutoForward": "silent"
+    }
+  },
+  "postStartCommand": "bash .devcontainer/start_browser.sh"
+}
