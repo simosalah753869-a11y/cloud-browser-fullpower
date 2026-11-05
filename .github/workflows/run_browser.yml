@@ -1,4 +1,4 @@
-name: Zero-Lag KasmVNC Cloud Browser (4-Core 16GB RAM)
+name: Zero-Lag Cloud Browser (Turbo WebSocket Mode)
 on:
   workflow_dispatch:
 
@@ -7,53 +7,69 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
-      - name: Launch Pure KasmVNC (Zero Selkies Lag + 720p Turbo)
+      - name: Launch Turbo Chromium (WebSocket JPEG Mode) + Turbo Firefox (TigerVNC)
         run: |
-          mkdir -p $HOME/cloud_browser_profile
-          docker rm -f cloud_chrome >/dev/null 2>&1 || true
+          mkdir -p $HOME/cloud_browser_profile $HOME/firefox_profile
 
-          # Use pure KasmVNC version (be46f21a-ls105) instead of laggy Selkies (:latest)
+          # 1. Chromium in WebSocket JPEG mode (fixes WebRTC UDP block on Cloudflare tunnel & cuts CPU load by 80%)
           docker run -d \
             --name=cloud_chrome \
             --security-opt seccomp=unconfined \
             -e PUID=1000 \
             -e PGID=1000 \
             -e TZ=Asia/Riyadh \
-            -e SUBFOLDER=/ \
-            -e TITLE="Turbo Cloud Browser" \
+            -e TITLE="Turbo Chrome" \
+            -e SELKIES_ENCODER=jpeg \
+            -e SELKIES_FRAMERATE=30 \
+            -e SELKIES_JPEG_QUALITY=60 \
             -e CUSTOM_RES_W=1280 \
             -e CUSTOM_RES_H=720 \
             -e CHROME_CLI="--disable-gpu-vsync --disable-smooth-scrolling --disk-cache-size=536870912 https://www.youtube.com https://www.facebook.com" \
             -e DOCKER_MODS="linuxserver/mods:universal-package-install" \
             -e INSTALL_PACKAGES="fonts-noto-core|fonts-noto-color-emoji|fonts-hosny-amiri" \
             -p 3000:3000 \
-            -p 3001:3001 \
             -v "$HOME/cloud_browser_profile:/config" \
             --shm-size="4gb" \
             --restart unless-stopped \
-            lscr.io/linuxserver/chromium:be46f21a-ls105
+            lscr.io/linuxserver/chromium:latest
+
+          # 2. Ultra-Fast TigerVNC Firefox (pure WebSocket TCP, near-zero CPU usage)
+          docker run -d \
+            --name=cloud_firefox \
+            -e TZ=Asia/Riyadh \
+            -e DISPLAY_WIDTH=1280 \
+            -e DISPLAY_HEIGHT=720 \
+            -e FF_OPEN_URL="https://www.youtube.com|https://www.facebook.com" \
+            -e ENABLE_CJK_FONT=1 \
+            -p 5800:5800 \
+            -v "$HOME/firefox_profile:/config:rw" \
+            --shm-size="2gb" \
+            --restart unless-stopped \
+            jlesage/firefox:latest
 
           curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared
           chmod +x /tmp/cloudflared
-          # Use HTTP2 protocol and edge-ip-version 4 for much lower latency
-          nohup /tmp/cloudflared tunnel --no-autoupdate --protocol http2 --edge-ip-version 4 --url http://localhost:3000 > /tmp/cf.log 2>&1 &
+
+          nohup /tmp/cloudflared tunnel --no-autoupdate --protocol http2 --edge-ip-version 4 --url http://localhost:3000 > /tmp/cf_chrome.log 2>&1 &
+          nohup /tmp/cloudflared tunnel --no-autoupdate --protocol http2 --edge-ip-version 4 --url http://localhost:5800 > /tmp/cf_ff.log 2>&1 &
 
           for i in {1..30}; do
-            URL=$(grep -oE "https://[a-zA-Z0-9-]+\.trycloudflare\.com" /tmp/cf.log | head -n 1 || true)
-            if [ -n "$URL" ]; then
-              echo "$URL" > /tmp/live_url.txt
+            U1=$(grep -oE "https://[a-zA-Z0-9-]+\.trycloudflare\.com" /tmp/cf_chrome.log | head -n 1 || true)
+            U2=$(grep -oE "https://[a-zA-Z0-9-]+\.trycloudflare\.com" /tmp/cf_ff.log | head -n 1 || true)
+            if [ -n "$U1" ] && [ -n "$U2" ]; then
+              echo "CHROME=$U1|FIREFOX=$U2" > /tmp/live_url.txt
               break
             fi
             sleep 2
           done
 
-      - name: Publish Fast KasmVNC URL
+      - name: Publish Fast URLs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           URL=$(cat /tmp/live_url.txt || echo "PENDING")
           B64=$(echo -n "$URL" | base64 -w 0)
-          curl -s -X PUT -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/contents/LIVE_URL.txt" -d "{\"message\":\"Update fast KasmVNC URL\",\"content\":\"$B64\"}" >/dev/null
+          curl -s -X PUT -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/contents/LIVE_URL.txt" -d "{\"message\":\"Update fast URLs\",\"content\":\"$B64\"}" >/dev/null
 
       - name: Keep Alive
         run: |
