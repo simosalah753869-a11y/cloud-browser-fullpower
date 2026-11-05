@@ -1,0 +1,65 @@
+name: Full-Power Cloud Browser (4-Core 16GB RAM)
+on:
+  workflow_dispatch:
+
+jobs:
+  cloud-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Start Full-Power Chromium (KasmVNC 60FPS + Audio + Arabic)
+        run: |
+          mkdir -p $HOME/cloud_browser_profile
+          docker run -d \
+            --name=cloud_chrome \
+            --security-opt seccomp=unconfined \
+            -e PUID=1000 \
+            -e PGID=1000 \
+            -e TZ=Asia/Riyadh \
+            -e SUBFOLDER=/ \
+            -e TITLE="Cloud Browser 60FPS" \
+            -e CHROME_CLI="https://www.youtube.com https://www.facebook.com" \
+            -e DOCKER_MODS="linuxserver/mods:universal-package-install" \
+            -e INSTALL_PACKAGES="fonts-noto-core|fonts-noto-color-emoji|fonts-hosny-amiri" \
+            -p 3000:3000 \
+            -p 3001:3001 \
+            -v "$HOME/cloud_browser_profile:/config" \
+            --shm-size="4gb" \
+            --restart unless-stopped \
+            lscr.io/linuxserver/chromium:latest
+
+          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared
+          chmod +x /tmp/cloudflared
+          nohup /tmp/cloudflared tunnel --no-autoupdate --url http://localhost:3000 > /tmp/cf.log 2>&1 &
+
+          for i in {1..30}; do
+            URL=$(grep -oE "https://[a-zA-Z0-9-]+\.trycloudflare\.com" /tmp/cf.log | head -n 1 || true)
+            if [ -n "$URL" ]; then
+              echo "LIVE_BROWSER_URL=$URL"
+              echo "$URL" > /tmp/live_url.txt
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Publish Live Browser URL to Repo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          URL=$(cat /tmp/live_url.txt || echo "PENDING")
+          echo "=========================================="
+          echo "LIVE CLOUD BROWSER URL: $URL"
+          echo "=========================================="
+          B64=$(echo -n "$URL" | base64 -w 0)
+          SHA=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/contents/LIVE_URL.txt" | jq -r '.sha // empty')
+          if [ -n "$SHA" ]; then
+            curl -s -X PUT -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/contents/LIVE_URL.txt" -d "{\"message\":\"Update live URL\",\"content\":\"$B64\",\"sha\":\"$SHA\"}" >/dev/null
+          else
+            curl -s -X PUT -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/contents/LIVE_URL.txt" -d "{\"message\":\"Update live URL\",\"content\":\"$B64\"}" >/dev/null
+          fi
+
+      - name: Keep Cloud Browser Alive (6 Hours Full Power)
+        run: |
+          for m in {1..350}; do
+            sleep 60
+          done
